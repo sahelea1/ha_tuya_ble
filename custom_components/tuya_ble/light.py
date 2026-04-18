@@ -10,11 +10,8 @@ import copy
 from typing import Any, Callable, cast
 from enum import IntEnum, StrEnum, Enum
 
-from homeassistant.components.tuya.const import (
-    DPCode,
-    DPType,
-    WorkMode,
-)
+from homeassistant.components.tuya.const import DPCode, WorkMode
+from .tuya_compat import DPType
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,

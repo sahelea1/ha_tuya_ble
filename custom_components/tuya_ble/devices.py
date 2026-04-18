@@ -20,10 +20,8 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from homeassistant.components.tuya.const import (
-    DPCode,
-    DPType,
-)
+from homeassistant.components.tuya.const import DPCode
+from .tuya_compat import DPType
 
 from home_assistant_bluetooth import BluetoothServiceInfoBleak
 from .tuya_ble import (
