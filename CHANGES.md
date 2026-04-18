@@ -1,5 +1,41 @@
 # Changes — ha_tuya_ble HA 2026.x compatibility fix
 
+## 0.1.11 — Recover from BlueZ "Notify acquired" NotPermitted
+
+After 0.1.10 the integration loaded and the device was paired, but every
+entity showed as *Nicht verfügbar* ("unavailable"). Diagnostics confirmed
+`connected: false` and empty `datapoints`, and the HA log was flooded with:
+
+```
+bleak.exc.BleakDBusError: [org.bluez.Error.NotPermitted] Notify acquired
+  File ".../tuya_ble/tuya_ble.py", line 710, in _ensure_connected
+    await self._client.start_notify(CHARACTERISTIC_NOTIFY, ...)
+```
+
+### Root cause
+
+BlueZ (5.64+) prefers the fd-based `AcquireNotify` D-Bus method for
+characteristic notifications. When `bleak_retry_connector.establish_connection`
+returns a service-cached client whose notify state is still "acquired" from
+a previous session, the subsequent `StartNotify` call returns
+`org.bluez.Error.NotPermitted "Notify acquired"` — the characteristic is
+already notifying, but bleak doesn't know it. The existing retry loop then
+runs 100 times in <1 s with no backoff, and availability never turns on
+because `_ensure_connected()` never completes past `start_notify`.
+
+### Fix
+
+- `tuya_ble/tuya_ble.py`:
+  - New helper `_start_notify_with_recovery()`. On `BleakDBusError` that
+    matches `NotPermitted` / `Notify acquired`, it calls `stop_notify` to
+    release the stale acquire and then retries `start_notify` once.
+  - If the recovery still fails (`BleakDBusError` surfaces), the caller
+    disconnects the client cleanly and the outer retry loop gets a fresh
+    session.
+  - Added `BLEAK_BACKOFF_TIME` sleeps on the `start_notify` failure branches
+    so the 100-iteration retry loop no longer spins in a tight cycle.
+- `manifest.json` — bumped to `0.1.11` (HACS "Update" button target).
+
 ## 0.1.10 — Light platform kelvin migration + pycountry unblocking
 
 After installing 0.1.9 the device setup still failed with "Einrichtungsfehler".

@@ -14,5 +14,5 @@
   "requirements": ["tuya-iot-py-sdk==0.6.6", "pycountry>23.0.0"],
   "iot_class": "local_push",
   "loggers": ["custom_components.tuya_ble"],
-  "version": "0.1.10"
+  "version": "0.1.11"
 }

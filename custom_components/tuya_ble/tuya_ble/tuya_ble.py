@@ -642,6 +642,42 @@ class TuyaBLEDevice:
         async with self._seq_num_lock:
             self._current_seq_num = 1
 
+    async def _start_notify_with_recovery(self) -> None:
+        """Start notifications, recovering from stale BlueZ acquire state.
+
+        BlueZ may return org.bluez.Error.NotPermitted "Notify acquired" when
+        the characteristic is still held from a previous session (service
+        cache / fd-based AcquireNotify). Calling stop_notify first releases
+        that state and a subsequent start_notify succeeds. If the second
+        attempt still fails, the exception propagates to the caller.
+        """
+        try:
+            await self._client.start_notify(
+                CHARACTERISTIC_NOTIFY, self._notification_handler
+            )
+            return
+        except BleakDBusError as ex:
+            error_text = str(ex) + " " + " ".join(
+                str(a) for a in (getattr(ex, "args", ()) or ())
+            )
+            if "NotPermitted" not in error_text and "Notify acquired" not in error_text:
+                raise
+            _LOGGER.debug(
+                "%s: notify already acquired, releasing and retrying",
+                self.address,
+            )
+        try:
+            await self._client.stop_notify(CHARACTERISTIC_NOTIFY)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug(
+                "%s: stop_notify during recovery failed (non-fatal)",
+                self.address,
+                exc_info=True,
+            )
+        await self._client.start_notify(
+            CHARACTERISTIC_NOTIFY, self._notification_handler
+        )
+
     async def _ensure_connected(self) -> None:
         """Ensure connection to device is established."""
         global global_connect_lock
@@ -707,13 +743,30 @@ class TuyaBLEDevice:
                                   self.address, self.rssi)
                     self._client = client
                     try:
-                        await self._client.start_notify(
-                            CHARACTERISTIC_NOTIFY, self._notification_handler
+                        await self._start_notify_with_recovery()
+                    except BleakDBusError as ex:
+                        # BlueZ can return org.bluez.Error.NotPermitted
+                        # "Notify acquired" when notifications are already
+                        # held via AcquireNotify from a previous session the
+                        # cached client remembers. Force a fresh session.
+                        _LOGGER.warning(
+                            "%s: starting notifications failed (%s) — "
+                            "disconnecting to obtain a fresh session",
+                            self.address,
+                            ex,
                         )
-                    except:  # [BLEAK_EXCEPTIONS, BleakNotFoundError]:
+                        try:
+                            await client.disconnect()
+                        except Exception:  # noqa: BLE001
+                            pass
+                        self._client = None
+                        await asyncio.sleep(BLEAK_BACKOFF_TIME)
+                        continue
+                    except Exception:  # noqa: BLE001
                         self._client = None
                         _LOGGER.error("%s: starting notifications failed",
                                       self.address, exc_info=True)
+                        await asyncio.sleep(BLEAK_BACKOFF_TIME)
                         continue
                 else:
                     continue
