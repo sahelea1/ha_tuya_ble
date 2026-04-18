@@ -100,7 +100,7 @@ async def _try_login(
     return None
 
 
-def _show_login_form(
+async def _show_login_form(
     flow: FlowHandler,
     user_input: dict[str, Any],
     errors: dict[str, str],
@@ -114,12 +114,16 @@ def _show_login_form(
                 break
 
     def_country_name: str | None = None
-    try:
-        def_country = pycountry.countries.get(alpha_2=flow.hass.config.country)
-        if def_country:
-            def_country_name = def_country.name
-    except:
-        pass
+    country_code = flow.hass.config.country
+    if country_code:
+        try:
+            def_country = await flow.hass.async_add_executor_job(
+                lambda: pycountry.countries.get(alpha_2=country_code)
+            )
+            if def_country:
+                def_country_name = def_country.name
+        except Exception:  # noqa: BLE001
+            pass
 
     return flow.async_show_form(
         step_id="login",
@@ -202,7 +206,7 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
             user_input = {}
             user_input.update(self.config_entry.options)
 
-        return _show_login_form(self, user_input, errors, placeholders)
+        return await _show_login_form(self, user_input, errors, placeholders)
 
 
 class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -278,7 +282,7 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             if self._data is not None and len(self._data) > 0:
                 user_input.update(self._data)
 
-        return _show_login_form(self, user_input, errors, placeholders)
+        return await _show_login_form(self, user_input, errors, placeholders)
 
     async def async_step_device(
         self, user_input: dict[str, Any] | None = None

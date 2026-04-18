@@ -1,5 +1,29 @@
 # Changes — ha_tuya_ble HA 2026.x compatibility fix
 
+## 0.1.10 — Light platform kelvin migration + pycountry unblocking
+
+After installing 0.1.9 the device setup still failed with "Einrichtungsfehler".
+Home Assistant 2024.3+ removed the mireds-based color-temperature API from
+`homeassistant.components.light`, so importing the `light` platform raised
+`ImportError: cannot import name 'ATTR_COLOR_TEMP'` and the whole config entry
+setup aborted (every device loads every platform module).
+
+Fixed:
+
+- `light.py` — migrated from the removed mireds API to the current kelvin API:
+  - `ATTR_COLOR_TEMP` → `ATTR_COLOR_TEMP_KELVIN`
+  - `self.min_mireds` / `self.max_mireds` → `self.min_color_temp_kelvin` /
+    `self.max_color_temp_kelvin`
+  - `color_temp` property → `color_temp_kelvin`
+  - Removed `reverse=True` from the remap: mireds are inverse of kelvin, so the
+    mapping direction flips when switching units (Tuya `temp_value` 0 = warm,
+    max = cool; kelvin low = warm, high = cool → direct mapping).
+- `config_flow.py` — `pycountry.countries.get(alpha_2=...)` is synchronous file
+  I/O and triggered HA's blocking-call detector inside the event loop. Wrapped
+  in `hass.async_add_executor_job(...)` and `_show_login_form` is now a
+  coroutine awaited by both callers.
+- `manifest.json` — bumped to `0.1.10`.
+
 ## Problem
 
 All existing forks crash on import in Home Assistant 2024.x and later:
